@@ -15,25 +15,42 @@ SAMPLE_RATE = 16000
 class AudioRecorder:
     def __init__(self, root):
         self.root = root
-        self.root.title("Audio Recorder")
-        self.root.geometry("600x400")
+        self.root.title("🎙️ Audio Recorder")
+        self.root.geometry("700x500")
+        self.root.configure(bg="#f0f0f0")
         self.root.resizable(False, False)
 
-        # --- Speaker ID Entry ---
-        tk.Label(root, text="Speaker ID:").pack(pady=5)
-        self.speaker_entry = tk.Entry(root, width=30)
-        self.speaker_entry.pack(pady=5)
+        # --- Header ---
+        header = tk.Label(root, text="Audio Recorder & Word Detector", 
+                          font=("Arial", 18, "bold"), bg="#4CAF50", fg="white", pady=10)
+        header.pack(fill="x")
 
-        # --- Start/Stop Buttons ---
-        self.start_btn = tk.Button(root, text="Start Listening", command=self.start_listening, bg="green", fg="white")
-        self.start_btn.pack(pady=10)
+        # --- Speaker ID Section ---
+        frame_top = tk.Frame(root, bg="#f0f0f0")
+        frame_top.pack(pady=15)
 
-        self.stop_btn = tk.Button(root, text="Stop", command=self.stop_listening, state=tk.DISABLED, bg="red", fg="white")
-        self.stop_btn.pack(pady=5)
+        tk.Label(frame_top, text="Speaker ID:", font=("Arial", 12), bg="#f0f0f0").grid(row=0, column=0, padx=5)
+        self.speaker_entry = tk.Entry(frame_top, width=25, font=("Arial", 12))
+        self.speaker_entry.grid(row=0, column=1, padx=5)
+
+        # --- Buttons ---
+        frame_buttons = tk.Frame(root, bg="#f0f0f0")
+        frame_buttons.pack(pady=10)
+
+        self.start_btn = tk.Button(frame_buttons, text="▶ Start Listening", 
+                                   command=self.start_listening, bg="#4CAF50", fg="white",
+                                   font=("Arial", 12, "bold"), width=18, height=2)
+        self.start_btn.grid(row=0, column=0, padx=10)
+
+        self.stop_btn = tk.Button(frame_buttons, text="⏹ Stop", 
+                                  command=self.stop_listening, state=tk.DISABLED, bg="#F44336", fg="white",
+                                  font=("Arial", 12, "bold"), width=18, height=2)
+        self.stop_btn.grid(row=0, column=1, padx=10)
 
         # --- Log area ---
-        self.log_area = scrolledtext.ScrolledText(root, width=70, height=15, state=tk.DISABLED)
-        self.log_area.pack(pady=10)
+        tk.Label(root, text="Logs / Output:", font=("Arial", 12, "bold"), bg="#f0f0f0").pack(anchor="w", padx=15, pady=5)
+        self.log_area = scrolledtext.ScrolledText(root, width=80, height=18, font=("Consolas", 10), state=tk.DISABLED)
+        self.log_area.pack(padx=15, pady=5, fill="both", expand=True)
 
         # Control flag for loop
         self.listening = False
@@ -112,7 +129,6 @@ class AudioRecorder:
         self.start_btn.config(state=tk.DISABLED)
         self.stop_btn.config(state=tk.NORMAL)
 
-        # Run in separate thread so GUI doesn’t freeze
         threading.Thread(target=self.listen_loop, args=(speaker_id,), daemon=True).start()
 
     def stop_listening(self):
