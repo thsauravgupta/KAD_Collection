@@ -8,8 +8,10 @@ import os
 import threading
 import tempfile
 
-from transformers import WhisperProcessor, WhisperForConditionalGeneration
-import torch
+import whisper
+
+
+
 
 # Recording parameters
 RECORD_SECONDS = 3
@@ -26,9 +28,7 @@ class AudioRecorder:
 
         model_name = "openai/whisper-base"
         device = "cpu"
-
-        self.processor = WhisperProcessor.from_pretrained(model_name)
-        self.model = WhisperForConditionalGeneration.from_pretrained(model_name)
+        self.model = whisper.load_model("large-v3")  # or "small" if you don't need Kashmiri
 
         # Set model to eval mode and move to device
         self.model.eval()
@@ -88,18 +88,21 @@ class AudioRecorder:
         self.log(f"✅ Recording saved successfully: {file_path}")
 
     def transcribe_with_whisper(self, audio_data):
-        """Use Hugging Face Whisper to translate Kashmiri speech into English"""
-        # Convert to tensor
-        input_features = self.processor(
-            audio_data, sampling_rate=SAMPLE_RATE, return_tensors="pt"
-        ).input_features
+        """Use OpenAI Whisper to translate Kashmiri speech into English"""
+        # Save temporary WAV file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmpfile:
+            audio_int16 = np.int16(audio_data * 32767)
+            write(tmpfile.name, SAMPLE_RATE, audio_int16)
+            tmp_path = tmpfile.name
 
-        # Generate translation (Kashmiri → English)
-        predicted_ids = self.model.generate(
-            input_features, task="translate", language="ks"
-        )
-        text = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
-        return text.strip().lower()
+        # Transcribe and translate using Whisper
+        result = self.model.transcribe(tmp_path, task="translate", language="Kashmiri")
+        text = result["text"].strip().lower()
+
+        # Clean up temp file
+        os.remove(tmp_path)
+        return text
+
 
     def listen_loop(self, speaker_id):
         recognizer = sr.Recognizer()
