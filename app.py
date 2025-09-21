@@ -6,6 +6,10 @@ from scipy.io.wavfile import write
 import numpy as np
 import os
 import threading
+import tempfile
+
+from transformers import WhisperProcessor, WhisperForConditionalGeneration
+import torch
 
 # Recording parameters
 RECORD_SECONDS = 3
@@ -20,7 +24,16 @@ class AudioRecorder:
         self.root.configure(bg="#f0f0f0")
         self.root.resizable(False, False)
 
-        # --- Header ---
+        model_name = "openai/whisper-base"
+        device = "cpu"
+
+        self.processor = WhisperProcessor.from_pretrained(model_name)
+        self.model = WhisperForConditionalGeneration.from_pretrained(model_name)
+
+        # Set model to eval mode and move to device
+        self.model.eval()
+        self.model = self.model.to(device)
+
         header = tk.Label(root, text="Audio Recorder & Word Detector", 
                           font=("Arial", 18, "bold"), bg="#4CAF50", fg="white", pady=10)
         header.pack(fill="x")
@@ -33,7 +46,6 @@ class AudioRecorder:
         self.speaker_entry = tk.Entry(frame_top, width=25, font=("Arial", 12))
         self.speaker_entry.grid(row=0, column=1, padx=5)
 
-        # --- Buttons ---
         frame_buttons = tk.Frame(root, bg="#f0f0f0")
         frame_buttons.pack(pady=10)
 
@@ -47,13 +59,12 @@ class AudioRecorder:
                                   font=("Arial", 12, "bold"), width=18, height=2)
         self.stop_btn.grid(row=0, column=1, padx=10)
 
-        # --- Log area ---
         tk.Label(root, text="Logs / Output:", font=("Arial", 12, "bold"), bg="#f0f0f0").pack(anchor="w", padx=15, pady=5)
         self.log_area = scrolledtext.ScrolledText(root, width=80, height=18, font=("Consolas", 10), state=tk.DISABLED)
         self.log_area.pack(padx=15, pady=5, fill="both", expand=True)
 
-        # Control flag for loop
         self.listening = False
+
 
     def log(self, message):
         """Append text to log area."""
@@ -76,12 +87,26 @@ class AudioRecorder:
         write(file_path, SAMPLE_RATE, audio_data_int16)
         self.log(f"✅ Recording saved successfully: {file_path}")
 
+    def transcribe_with_whisper(self, audio_data):
+        """Use Hugging Face Whisper to translate Kashmiri speech into English"""
+        # Convert to tensor
+        input_features = self.processor(
+            audio_data, sampling_rate=SAMPLE_RATE, return_tensors="pt"
+        ).input_features
+
+        # Generate translation (Kashmiri → English)
+        predicted_ids = self.model.generate(
+            input_features, task="translate", language="ks"
+        )
+        text = self.processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+        return text.strip().lower()
+
     def listen_loop(self, speaker_id):
         recognizer = sr.Recognizer()
         microphone = sr.Microphone(sample_rate=SAMPLE_RATE)
 
         self.log(f"🎙️ Listening started for Speaker: '{speaker_id}'")
-        self.log("Say a single word to trigger recording...")
+        self.log("Say a single Kashmiri word to trigger recording...")
 
         while self.listening:
             try:
@@ -89,29 +114,26 @@ class AudioRecorder:
                     recognizer.adjust_for_ambient_noise(source, duration=0.5)
                     audio = recognizer.listen(source, phrase_time_limit=3)
 
-                try:
-                    recognized_text = recognizer.recognize_google(audio).lower()
-                    self.log(f"🗣️ You said: '{recognized_text}'")
+                # Convert raw audio
+                audio_data = np.frombuffer(audio.get_raw_data(), np.int16).astype(np.float32) / 32767.0
 
-                    if len(recognized_text.split()) == 1:
-                        self.log(f"Word '{recognized_text}' detected! Recording for {RECORD_SECONDS} seconds...")
+                # --- Whisper translation ---
+                recognized_text = self.transcribe_with_whisper(audio_data)
+                self.log(f"🗣️ You said (translated): '{recognized_text}'")
 
-                        recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE),
-                                           samplerate=SAMPLE_RATE,
-                                           channels=1,
-                                           dtype='float64')
-                        sd.wait()
+                if len(recognized_text.split()) == 1:
+                    self.log(f"Word '{recognized_text}' detected! Recording for {RECORD_SECONDS} seconds...")
 
-                        self.save_recording(recognized_text, recording, speaker_id)
-                        self.log("-------------------------------------------")
+                    recording = sd.rec(int(RECORD_SECONDS * SAMPLE_RATE),
+                                       samplerate=SAMPLE_RATE,
+                                       channels=1,
+                                       dtype='float64')
+                    sd.wait()
 
-                    else:
-                        self.log("⚠️ Please speak only a single word.")
-
-                except sr.UnknownValueError:
-                    self.log("❌ Could not understand audio.")
-                except sr.RequestError as e:
-                    self.log(f"❌ API error: {e}")
+                    self.save_recording(recognized_text, recording, speaker_id)
+                    self.log("-------------------------------------------")
+                else:
+                    self.log("⚠️ Please speak only a single word.")
 
             except Exception as e:
                 self.log(f"⚠️ Error: {e}")
